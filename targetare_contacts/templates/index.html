@@ -3,7 +3,7 @@
 <section class="panel upload-panel">
   <div>
     <h1>Încarcă lista de firme</h1>
-    <p>XLSX sau CSV cu denumirea firmei, CUI și, opțional, adresa existentă. După fiecare interogare, contactele sunt salvate automat în XLSX.</p>
+    <p>Încarcă XLSX-ul de lucru. Aplicația citește contactele și coloana „Status interogare”, apoi continuă de unde ai rămas.</p>
   </div>
   <form action="{{ url_for('upload_companies') }}" method="post" enctype="multipart/form-data" class="upload-form">
     <input type="file" name="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
@@ -24,6 +24,12 @@
     {% endif %}
   </div>
 </section>
+
+{% if workbook_available %}
+<section class="resume-note">
+  Descarcă XLSX-ul actualizat înainte să închizi sesiunea și încarcă același fișier data viitoare. Acesta păstrează emailurile, telefoanele și progresul interogărilor.
+</section>
+{% endif %}
 
 {% if companies %}
 <div class="table-wrap">
@@ -58,7 +64,9 @@
       </td>
       <td class="actions">
         <form method="post" action="{{ url_for('interrogate_company', company_id=company['id'], page=page, q=query) }}">
-          <button type="submit" class="button primary" {% if not api_configured %}disabled{% endif %}>Interoghează</button>
+          <button type="submit" class="button primary" {% if not api_configured %}disabled{% endif %}>
+            {{ 'Interoghează' if company['lookup_status'] == 'not_queried' else 'Reinteroghează' }}
+          </button>
         </form>
       </td>
     </tr>
