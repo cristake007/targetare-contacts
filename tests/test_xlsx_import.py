@@ -37,8 +37,59 @@ def test_parse_xlsx_with_numeric_cui_and_intro_row():
     assert rows[0].tax_id == "12345678"
     assert rows[0].original_address == "Bucuresti"
     assert rows[0].source_row == 3
+    assert rows[0].imported_status == "not_queried"
     assert report.duplicates == 1
     assert report.invalid_tax_ids == 1
+
+
+def test_parse_xlsx_restores_contacts_and_interrogation_status():
+    stream = build_workbook(
+        [
+            [
+                "Denumire",
+                "CUI",
+                "Adresa",
+                "Emailuri Targetare",
+                "Telefoane Targetare",
+                "Status interogare",
+            ],
+            [
+                "ACME SRL",
+                "RO12345678",
+                "Bucuresti",
+                "office@example.ro; sales@example.ro",
+                "+40700000000; +40210000000",
+                "Interogat",
+            ],
+        ]
+    )
+
+    rows, report = parse_companies_xlsx(stream)
+
+    assert report.imported == 1
+    assert rows[0].imported_emails == (
+        "office@example.ro",
+        "sales@example.ro",
+    )
+    assert rows[0].imported_phones == (
+        "+40700000000",
+        "+40210000000",
+    )
+    assert rows[0].imported_status == "success"
+
+
+def test_contacts_imply_interrogated_when_old_file_has_no_status_column():
+    stream = build_workbook(
+        [
+            ["Denumire", "CUI", "Emailuri Targetare"],
+            ["ACME SRL", "12345678", "office@example.ro"],
+        ]
+    )
+
+    rows, _report = parse_companies_xlsx(stream)
+
+    assert rows[0].imported_emails == ("office@example.ro",)
+    assert rows[0].imported_status == "success"
 
 
 def test_xlsx_without_required_headers_is_rejected():
