@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="panel upload-panel">
+  <div>
+    <h1>Încarcă lista de firme</h1>
+    <p>CSV cu denumirea firmei, CUI și, opțional, adresa existentă. Un import nou înlocuiește lista curentă.</p>
+  </div>
+  <form action="{{ url_for('upload_csv') }}" method="post" enctype="multipart/form-data" class="upload-form">
+    <input type="file" name="file" accept=".csv,text/csv" required>
+    <button type="submit" class="button primary">Importă CSV</button>
+  </form>
+</section>
+
+<section class="toolbar">
+  <form method="get" class="search-form">
+    <input type="search" name="q" value="{{ query }}" placeholder="Caută după firmă sau CUI">
+    <button class="button" type="submit">Caută</button>
+    {% if query %}<a class="button link" href="{{ url_for('index') }}">Resetează</a>{% endif %}
+  </form>
+  <span>{{ total }} firme</span>
+</section>
+
+{% if companies %}
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr>
+      <th>Firmă</th>
+      <th>CUI</th>
+      <th>Adresă din CSV</th>
+      <th>Emailuri</th>
+      <th>Telefoane</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for company in companies %}
+    <tr id="company-{{ company['id'] }}">
+      <td><strong>{{ company['company_name'] }}</strong></td>
+      <td><code>{{ company['tax_id'] }}</code></td>
+      <td class="muted">{{ company['original_address'] or '—' }}</td>
+      <td>
+        {% for email in company['all_emails'] %}<div><a href="mailto:{{ email }}">{{ email }}</a></div>{% else %}<span class="muted">—</span>{% endfor %}
+      </td>
+      <td>
+        {% for phone in company['all_phones'] %}<div><a href="tel:{{ phone }}">{{ phone }}</a></div>{% else %}<span class="muted">—</span>{% endfor %}
+      </td>
+      <td>
+        <span class="status {{ company['lookup_status'] }}">{{ company['lookup_status']|replace('_', ' ') }}</span>
+        {% if company['remaining_requests'] is not none %}<small>{{ company['remaining_requests'] }} cereri rămase</small>{% endif %}
+        {% if company['error_message'] %}<small class="error-text">{{ company['error_message'] }}</small>{% endif %}
+      </td>
+      <td class="actions">
+        <form method="post" action="{{ url_for('interrogate_company', company_id=company['id'], page=page, q=query) }}">
+          <button type="submit" class="button primary" {% if not api_configured %}disabled{% endif %}>Interoghează</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<nav class="pagination" aria-label="Paginare">
+  {% if page > 1 %}<a class="button" href="{{ url_for('index', page=page-1, q=query) }}">Înapoi</a>{% endif %}
+  <span>Pagina {{ page }} din {{ total_pages }}</span>
+  {% if page < total_pages %}<a class="button" href="{{ url_for('index', page=page+1, q=query) }}">Înainte</a>{% endif %}
+</nav>
+{% else %}
+<section class="empty-state">
+  <h2>Nu există firme încă</h2>
+  <p>Încarcă un fișier CSV pentru a începe.</p>
+</section>
+{% endif %}
+{% endblock %}
