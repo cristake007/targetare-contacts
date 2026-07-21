@@ -8,36 +8,44 @@ Aplicație Flask pentru importul unei liste XLSX sau CSV de firme și interogare
 - import CSV cu separator virgulă, punct și virgulă, tab sau `|`;
 - detectare automată a coloanelor pentru denumire, CUI și adresă;
 - normalizare CUI (`RO 12.345.678` devine `12345678`);
-- acceptarea CUI-ului stocat în Excel ca text sau număr;
-- eliminarea duplicatelor după CUI;
-- tabel cu 100 de firme pe pagină și căutare după denumire/CUI;
+- tabel cu 100 de firme pe pagină;
 - buton **Interoghează** pentru fiecare firmă;
-- două cereri API per firmă: `/emails` și `/phones`;
 - salvarea automată a contactelor și progresului în XLSX;
-- restaurarea automată a stării la reîncărcarea aceluiași XLSX;
-- descărcarea fișierului actualizat din interfață.
+- document activ persistent după refresh și restart;
+- merge după CUI la reîncărcare, fără ștergerea rezultatelor existente;
+- backup automat înainte ca documentul activ să fie înlocuit.
 
-## XLSX-ul este sursa de adevăr
+## Documentul activ
 
-Aplicația folosește trei coloane pentru a păstra rezultatele și progresul:
+Câmpul HTML de upload se golește automat după refresh, deoarece browserul nu permite păstrarea unei selecții locale. Acesta nu mai reprezintă starea aplicației.
+
+După încărcare, interfața afișează separat:
+
+- numele fișierului activ;
+- faptul că acesta rămâne activ după refresh;
+- butonul de descărcare cu același nume de fișier.
+
+Fișierul activ este păstrat în directorul local `instance`. La repornirea serverului, aplicația îl citește automat și reconstruiește tabelul, fără o încărcare nouă.
+
+Interogarea este blocată dacă documentul activ lipsește sau nu poate fi citit.
+
+## Protecția rezultatelor la reîncărcare
+
+Aplicația folosește trei coloane:
 
 - `Emailuri Targetare`;
 - `Telefoane Targetare`;
 - `Status interogare`.
 
-După fiecare interogare, datele sunt scrise pe rândul firmei, iar statusul devine `Interogat`, `Parțial` sau `Eroare`.
+Dacă este încărcată din nou o copie mai veche a aceluiași XLSX, aplicația compară firmele după CUI și păstrează contactele și statusurile deja existente în documentul activ sau în baza sesiunii curente. Rezultatele nu mai sunt șterse prin simpla reîncărcare a fișierului.
 
-La următoarea sesiune:
+Înainte de înlocuirea documentului activ se creează și o copie de siguranță:
 
-1. încarcă XLSX-ul actualizat descărcat anterior;
-2. aplicația citește cele trei coloane;
-3. contactele reapar în tabel;
-4. firmele deja procesate sunt marcate și au butonul **Reinteroghează**;
-5. poți continua de unde ai rămas.
+```text
+instance/firme-targetare.backup.xlsx
+```
 
-Dacă un XLSX mai vechi are deja emailuri sau telefoane, dar nu are coloana `Status interogare`, aplicația adaugă această coloană și marchează automat acele rânduri ca `Interogat`.
-
-Browserul nu poate modifica direct fișierul original aflat pe calculator. Butonul **Descarcă XLSX actualizat** returnează copia care trebuie păstrată și reîncărcată data viitoare.
+După fiecare interogare, XLSX-ul este scris primul. Baza SQLite este actualizată numai dacă salvarea în XLSX reușește.
 
 ## Pornire locală
 
@@ -61,7 +69,7 @@ flask --app app run --debug
 
 Deschide `http://127.0.0.1:5000`.
 
-## Format XLSX recomandat
+## Format XLSX
 
 Prima foaie trebuie să conțină un rând de antet cu denumirea firmei și CUI-ul. Adresa este opțională.
 
@@ -69,16 +77,7 @@ Prima foaie trebuie să conțină un rând de antet cu denumirea firmei și CUI-
 |---|---|---|---|---|---|
 | EXEMPLU SRL | RO12345678 | București | office@exemplu.ro | +40700000000 | Interogat |
 
-Aplicația caută rândul de antet în primele 25 de rânduri, astfel încât fișierul poate conține câteva rânduri introductive înaintea tabelului.
-
-## Format CSV alternativ
-
-```csv
-Denumire;Cod unic inregistrare;Adresa;Emailuri Targetare;Telefoane Targetare;Status interogare
-EXEMPLU SRL;RO12345678;București;office@exemplu.ro;+40700000000;Interogat
-```
-
-Pentru un import CSV, aplicația generează automat o copie XLSX de lucru. Interogarea se face exclusiv după CUI.
+Aplicația caută antetul în primele 25 de rânduri.
 
 ## Teste
 
@@ -86,7 +85,5 @@ Pentru un import CSV, aplicația generează automat o copie XLSX de lucru. Inter
 pip install -r requirements-dev.txt
 pytest
 ```
-
-## Utilizare
 
 Această versiune este destinată rulării locale sau într-o rețea privată. Nu o publica direct pe internet fără autentificare și protecție suplimentară.
