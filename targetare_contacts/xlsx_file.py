@@ -12,6 +12,7 @@ from .xlsx_import import _find_header_row
 
 EMAIL_HEADER = "Emailuri Targetare"
 PHONE_HEADER = "Telefoane Targetare"
+STATUS_HEADER = "Status interogare"
 
 
 class WorkbookUpdateError(RuntimeError):
@@ -30,9 +31,18 @@ def _unique_text(values: Iterable[object]) -> str:
     return "; ".join(result)
 
 
-def _ensure_contact_columns(worksheet, header_row: int) -> tuple[int, int]:
+def _status_text(status: str) -> str:
+    return {
+        "success": "Interogat",
+        "partial": "Parțial",
+        "error": "Eroare",
+    }.get(status, "")
+
+
+def _ensure_tracking_columns(worksheet, header_row: int) -> tuple[int, int, int]:
     email_column: int | None = None
     phone_column: int | None = None
+    status_column: int | None = None
     last_header_column = 0
 
     for cell in worksheet[header_row]:
@@ -44,6 +54,8 @@ def _ensure_contact_columns(worksheet, header_row: int) -> tuple[int, int]:
             email_column = cell.column
         elif normalized == PHONE_HEADER.casefold():
             phone_column = cell.column
+        elif normalized == STATUS_HEADER.casefold():
+            status_column = cell.column
 
     next_column = last_header_column + 1
     if email_column is None:
@@ -53,8 +65,12 @@ def _ensure_contact_columns(worksheet, header_row: int) -> tuple[int, int]:
     if phone_column is None:
         phone_column = next_column
         worksheet.cell(row=header_row, column=phone_column, value=PHONE_HEADER)
+        next_column += 1
+    if status_column is None:
+        status_column = next_column
+        worksheet.cell(row=header_row, column=status_column, value=STATUS_HEADER)
 
-    return email_column, phone_column
+    return email_column, phone_column, status_column
 
 
 def _save_atomic(workbook, destination: Path) -> None:
@@ -81,7 +97,7 @@ def prepare_uploaded_xlsx(raw: bytes, destination: str | Path) -> None:
     try:
         worksheet = workbook[workbook.sheetnames[0]]
         header_row, _headers = _find_header_row(worksheet)
-        _ensure_contact_columns(worksheet, header_row)
+        _ensure_tracking_columns(worksheet, header_row)
         _save_atomic(workbook, Path(destination))
     finally:
         workbook.close()
@@ -93,11 +109,26 @@ def create_xlsx_from_rows(rows: list[CompanyRow], destination: str | Path) -> No
         worksheet = workbook.active
         worksheet.title = "Companii"
         worksheet.append(["Denumire", "Cod unic inregistrare", "Adresa"])
+        email_column, phone_column, status_column = _ensure_tracking_columns(worksheet, 1)
         for row in rows:
             worksheet.cell(row=row.source_row, column=1, value=row.company_name)
             worksheet.cell(row=row.source_row, column=2, value=row.tax_id)
             worksheet.cell(row=row.source_row, column=3, value=row.original_address)
-        _ensure_contact_columns(worksheet, 1)
+            worksheet.cell(
+                row=row.source_row,
+                column=email_column,
+                value=_unique_text(row.imported_emails),
+            )
+            worksheet.cell(
+                row=row.source_row,
+                column=phone_column,
+                value=_unique_text(row.imported_phones),
+            )
+            worksheet.cell(
+                row=row.source_row,
+                column=status_column,
+                value=_status_text(row.imported_status),
+            )
         _save_atomic(workbook, Path(destination))
     finally:
         workbook.close()
@@ -108,6 +139,7 @@ def write_company_contacts(
     source_row: int,
     emails: list[str] | None,
     phones: list[str] | None,
+    status: str,
 ) -> None:
     path = Path(workbook_path)
     if not path.is_file():
@@ -121,7 +153,9 @@ def write_company_contacts(
     try:
         worksheet = workbook[workbook.sheetnames[0]]
         header_row, _headers = _find_header_row(worksheet)
-        email_column, phone_column = _ensure_contact_columns(worksheet, header_row)
+        email_column, phone_column, status_column = _ensure_tracking_columns(
+            worksheet, header_row
+        )
 
         if emails is not None:
             worksheet.cell(
@@ -135,6 +169,11 @@ def write_company_contacts(
                 column=phone_column,
                 value=_unique_text(phones),
             )
+        worksheet.cell(
+            row=source_row,
+            column=status_column,
+            value=_status_text(status),
+        )
 
         _save_atomic(workbook, path)
     finally:
