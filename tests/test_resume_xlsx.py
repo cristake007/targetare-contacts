@@ -75,4 +75,4 @@ def test_downloaded_xlsx_restores_contacts_in_a_new_session(tmp_path, monkeypatc
     assert b"office@example.ro" in response.data
     assert b"+40700000000" in response.data
     assert b"success" in response.data
-    assert b"restaurate 1" in response.data
+    assert b"Fi\xc8\x99ier activ" in response.data
