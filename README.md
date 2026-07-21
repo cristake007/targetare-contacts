@@ -10,12 +10,27 @@ Aplicație Flask pentru importul unei liste XLSX sau CSV de firme și interogare
 - normalizare CUI (`RO 12.345.678` devine `12345678`);
 - acceptarea CUI-ului stocat în Excel ca text sau număr;
 - eliminarea duplicatelor după CUI;
-- tabel paginat și căutare după denumire/CUI;
+- tabel cu 100 de firme pe pagină și căutare după denumire/CUI;
 - buton **Interoghează** pentru fiecare firmă;
 - două cereri API per firmă: `/emails` și `/phones`;
-- salvarea rezultatelor și a erorilor în SQLite.
+- salvarea rezultatelor și a erorilor în SQLite;
+- salvarea automată a contactelor în copia XLSX de lucru;
+- descărcarea fișierului actualizat din interfață.
 
-Un import nou înlocuiește lista curentă.
+Un import nou înlocuiește lista și fișierul XLSX de lucru curente.
+
+## Salvarea rezultatelor în XLSX
+
+La încărcare, aplicația creează în directorul local `instance` o copie de lucru numită `firme-targetare.xlsx`. Fișierul original de pe calculator nu este modificat direct de browser.
+
+Aplicația adaugă sau reutilizează două coloane:
+
+- `Emailuri Targetare`;
+- `Telefoane Targetare`.
+
+După fiecare interogare reușită sau parțială, datele disponibile sunt scrise automat pe rândul firmei. Valorile multiple sunt separate prin `;` și duplicatele sunt eliminate.
+
+Butonul **Descarcă XLSX actualizat** returnează întotdeauna ultima copie salvată.
 
 ## Pornire locală
 
@@ -56,7 +71,7 @@ Denumire;Cod unic inregistrare;Adresa
 EXEMPLU SRL;RO12345678;București
 ```
 
-Adresa importată este afișată doar ca referință. Interogarea se face exclusiv după CUI.
+Pentru un import CSV, aplicația generează automat o copie XLSX de lucru. Adresa importată este afișată doar ca referință. Interogarea se face exclusiv după CUI.
 
 ## Teste
 
