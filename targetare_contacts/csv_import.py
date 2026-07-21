@@ -66,6 +66,8 @@ def _normalize_header(value: str) -> str:
 
 
 def normalize_tax_id(value: object) -> str:
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
     raw = str(value or "").strip().upper()
     raw = re.sub(r"^RO\s*", "", raw)
     return re.sub(r"\D", "", raw)
