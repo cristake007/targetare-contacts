@@ -8,7 +8,7 @@ from pathlib import Path
 
 from flask import Flask, flash, redirect, render_template, request, send_file, url_for
 
-from .csv_import import CSVImportError, parse_companies_csv
+from .csv_import import CSVImportError, CompanyRow, parse_companies_csv
 from .db import close_db, get_db, init_db
 from .targetare import TargetareClient
 from .xlsx_file import (
@@ -64,6 +64,22 @@ def _result_phones(payload: dict | None) -> list[str] | None:
         *(payload.get("contactPhones") or []),
         *(payload.get("websitePhones") or []),
         *(payload.get("verifiedPhones") or []),
+    )
+
+
+def _row_db_values(row: CompanyRow) -> tuple[object, ...]:
+    emails = list(row.imported_emails)
+    phones = list(row.imported_phones)
+    return (
+        row.company_name,
+        row.tax_id,
+        row.original_address,
+        row.source_row,
+        emails[0] if emails else None,
+        json.dumps(emails[1:]),
+        phones[0] if phones else None,
+        json.dumps(phones[1:]),
+        row.imported_status,
     )
 
 
@@ -187,18 +203,32 @@ def create_app(test_config: dict | None = None) -> Flask:
             db.execute("DELETE FROM companies")
             db.executemany(
                 """
-                INSERT INTO companies (company_name, tax_id, original_address, source_row)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO companies (
+                    company_name,
+                    tax_id,
+                    original_address,
+                    source_row,
+                    primary_email,
+                    website_emails,
+                    primary_phone,
+                    contact_phones,
+                    lookup_status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                [
-                    (row.company_name, row.tax_id, row.original_address, row.source_row)
-                    for row in rows
-                ],
+                [_row_db_values(row) for row in rows],
             )
 
+        restored = sum(
+            1
+            for row in rows
+            if row.imported_status != "not_queried"
+            or row.imported_emails
+            or row.imported_phones
+        )
         message = (
             f"Au fost importate {report.imported} firme. "
-            "Fișierul XLSX de lucru a fost pregătit pentru salvarea contactelor."
+            f"Au fost restaurate {restored} interogări din fișier."
         )
         if report.duplicates or report.invalid_tax_ids:
             message += (
@@ -280,16 +310,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
 
         workbook_error: str | None = None
-        if email_values is not None or phone_values is not None:
-            try:
-                write_company_contacts(
-                    app.config["ACTIVE_WORKBOOK"],
-                    company["source_row"],
-                    email_values,
-                    phone_values,
-                )
-            except WorkbookUpdateError as exc:
-                workbook_error = str(exc)
+        try:
+            write_company_contacts(
+                app.config["ACTIVE_WORKBOOK"],
+                company["source_row"],
+                email_values,
+                phone_values,
+                result.status,
+            )
+        except WorkbookUpdateError as exc:
+            workbook_error = str(exc)
 
         if workbook_error:
             flash(
@@ -298,16 +328,16 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
         elif result.status == "success":
             flash(
-                f"{company['company_name']} a fost interogată și salvată automat în XLSX.",
+                f"{company['company_name']} a fost interogată și marcată în XLSX.",
                 "success",
             )
         elif result.status == "partial":
             flash(
-                "Interogare parțială. Datele disponibile au fost salvate automat în XLSX.",
+                "Interogare parțială. Datele și starea au fost salvate în XLSX.",
                 "warning",
             )
         else:
-            flash("Interogarea a eșuat. Vezi mesajul din tabel.", "error")
+            flash("Interogarea a eșuat și starea a fost salvată în XLSX.", "error")
 
         return redirect(
             url_for(
