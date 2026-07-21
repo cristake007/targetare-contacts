@@ -10,6 +10,7 @@ from flask import Flask, flash, redirect, render_template, request, url_for
 from .csv_import import CSVImportError, parse_companies_csv
 from .db import close_db, get_db, init_db
 from .targetare import TargetareClient
+from .xlsx_import import XLSXImportError, parse_companies_xlsx
 
 
 def _decode_list(value: str | None) -> list[str]:
@@ -122,19 +123,24 @@ def create_app(test_config: dict | None = None) -> Flask:
         )
 
     @app.post("/upload")
-    def upload_csv():
+    def upload_companies():
         uploaded = request.files.get("file")
         if not uploaded or not uploaded.filename:
-            flash("Selectează un fișier CSV.", "error")
+            flash("Selectează un fișier XLSX sau CSV.", "error")
             return redirect(url_for("index"))
 
-        if not uploaded.filename.lower().endswith(".csv"):
-            flash("Fișierul trebuie să aibă extensia .csv.", "error")
+        extension = Path(uploaded.filename).suffix.lower()
+        if extension == ".xlsx":
+            parser = parse_companies_xlsx
+        elif extension == ".csv":
+            parser = parse_companies_csv
+        else:
+            flash("Fișierul trebuie să aibă extensia .xlsx sau .csv.", "error")
             return redirect(url_for("index"))
 
         try:
-            rows, report = parse_companies_csv(uploaded.stream)
-        except CSVImportError as exc:
+            rows, report = parser(uploaded.stream)
+        except (CSVImportError, XLSXImportError) as exc:
             flash(str(exc), "error")
             return redirect(url_for("index"))
 
