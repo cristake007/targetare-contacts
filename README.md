@@ -1,12 +1,14 @@
 # Targetare Contacts
 
-Aplicație Flask pentru importul unei liste CSV de firme și interogarea manuală, firmă cu firmă, a adreselor de email și numerelor de telefon din API-ul Targetare.ro.
+Aplicație Flask pentru importul unei liste XLSX sau CSV de firme și interogarea manuală, firmă cu firmă, a adreselor de email și numerelor de telefon din API-ul Targetare.ro.
 
 ## Funcții MVP
 
+- import XLSX din prima foaie de calcul;
 - import CSV cu separator virgulă, punct și virgulă, tab sau `|`;
 - detectare automată a coloanelor pentru denumire, CUI și adresă;
 - normalizare CUI (`RO 12.345.678` devine `12345678`);
+- acceptarea CUI-ului stocat în Excel ca text sau număr;
 - eliminarea duplicatelor după CUI;
 - tabel paginat și căutare după denumire/CUI;
 - buton **Interoghează** pentru fiecare firmă;
@@ -37,16 +39,24 @@ flask --app app run --debug
 
 Deschide `http://127.0.0.1:5000`.
 
-## Format CSV
+## Format XLSX recomandat
 
-Exemplu:
+Prima foaie trebuie să conțină un rând de antet cu denumirea firmei și CUI-ul. Adresa este opțională.
+
+| Denumire | Cod unic inregistrare | Adresa |
+|---|---|---|
+| EXEMPLU SRL | RO12345678 | București |
+
+Aplicația caută rândul de antet în primele 25 de rânduri, astfel încât fișierul poate conține câteva rânduri introductive înaintea tabelului.
+
+## Format CSV alternativ
 
 ```csv
 Denumire;Cod unic inregistrare;Adresa
 EXEMPLU SRL;RO12345678;București
 ```
 
-Adresa este opțională și este afișată doar ca referință. Interogarea se face exclusiv după CUI.
+Adresa importată este afișată doar ca referință. Interogarea se face exclusiv după CUI.
 
 ## Teste
 
