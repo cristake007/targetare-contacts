@@ -20,6 +20,7 @@ h1 { margin-bottom: 6px; font-size: 22px; }
 .upload-panel p { margin-bottom: 0; color: #617080; }
 .upload-form, .search-form, .toolbar, .toolbar-actions, .pagination { display: flex; align-items: center; gap: 10px; }
 .toolbar { justify-content: space-between; margin: 20px 0 12px; }
+.resume-note { margin: 0 0 12px; border-left: 3px solid #164194; background: #edf3ff; padding: 9px 12px; color: #304253; font-size: 13px; }
 input[type="search"], input[type="file"] { min-height: 40px; border: 1px solid #bec8d3; background: #fff; padding: 8px 10px; }
 input[type="search"] { width: 320px; }
 .button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; border: 1px solid #aab6c2; background: #fff; color: #263746; padding: 6px 11px; text-decoration: none; cursor: pointer; font-weight: 600; }
