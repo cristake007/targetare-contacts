@@ -1,5 +1,7 @@
 import io
 
+from openpyxl import Workbook
+
 from targetare_contacts import create_app
 from targetare_contacts.db import get_db
 from targetare_contacts.targetare import InterrogationResult
@@ -17,6 +19,18 @@ def make_app(tmp_path):
     )
 
 
+def make_xlsx():
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.append(["Denumire", "Cod unic inregistrare", "Adresa"])
+    worksheet.append(["ACME XLSX SRL", 12345678, "Bucuresti"])
+    stream = io.BytesIO()
+    workbook.save(stream)
+    workbook.close()
+    stream.seek(0)
+    return stream
+
+
 def test_upload_and_list_csv(tmp_path):
     app = make_app(tmp_path)
     client = app.test_client()
@@ -31,6 +45,22 @@ def test_upload_and_list_csv(tmp_path):
 
     assert response.status_code == 200
     assert b"ACME SRL" in response.data
+    assert b"12345678" in response.data
+
+
+def test_upload_and_list_xlsx(tmp_path):
+    app = make_app(tmp_path)
+    client = app.test_client()
+
+    response = client.post(
+        "/upload",
+        data={"file": (make_xlsx(), "companies.xlsx")},
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert b"ACME XLSX SRL" in response.data
     assert b"12345678" in response.data
 
 
