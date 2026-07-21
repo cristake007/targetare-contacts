@@ -1,15 +1,34 @@
 {% extends "base.html" %}
 {% block content %}
 <section class="panel upload-panel">
-  <div>
-    <h1>Încarcă lista de firme</h1>
-    <p>Încarcă XLSX-ul de lucru. Aplicația citește contactele și coloana „Status interogare”, apoi continuă de unde ai rămas.</p>
+  <div class="upload-copy">
+    <h1>Fișierul de lucru</h1>
+    {% if workbook_available %}
+      <div class="active-file">
+        <span>Fișier activ</span>
+        <strong>{{ active_filename }}</strong>
+        <small>Rămâne activ după refresh și după repornirea serverului.</small>
+      </div>
+    {% elif workbook_error %}
+      <p class="error-text">Fișierul activ nu poate fi citit: {{ workbook_error }}</p>
+    {% else %}
+      <p>Încarcă fișierul XLSX care conține lista de firme.</p>
+    {% endif %}
   </div>
   <form action="{{ url_for('upload_companies') }}" method="post" enctype="multipart/form-data" class="upload-form">
-    <input type="file" name="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
-    <button type="submit" class="button primary">Importă fișierul</button>
+    <label>
+      <span>{{ 'Actualizează sau reîncarcă fișierul' if workbook_available else 'Selectează fișierul' }}</span>
+      <input type="file" name="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
+    </label>
+    <button type="submit" class="button primary">{{ 'Actualizează fișierul activ' if workbook_available else 'Încarcă fișierul' }}</button>
   </form>
 </section>
+
+{% if workbook_available %}
+<section class="resume-note">
+  Câmpul de upload se golește la refresh din motive de securitate ale browserului. Fișierul activ este cel afișat mai sus, nu câmpul gol.
+</section>
+{% endif %}
 
 <section class="toolbar">
   <form method="get" class="search-form">
@@ -19,17 +38,9 @@
   </form>
   <div class="toolbar-actions">
     <span>{{ total }} firme</span>
-    {% if workbook_available %}
-      <a class="button primary" href="{{ url_for('download_xlsx') }}">Descarcă XLSX actualizat</a>
-    {% endif %}
+    {% if workbook_available %}<a class="button primary" href="{{ url_for('download_xlsx') }}">Descarcă {{ active_filename }}</a>{% endif %}
   </div>
 </section>
-
-{% if workbook_available %}
-<section class="resume-note">
-  Descarcă XLSX-ul actualizat înainte să închizi sesiunea și încarcă același fișier data viitoare. Acesta păstrează emailurile, telefoanele și progresul interogărilor.
-</section>
-{% endif %}
 
 {% if companies %}
 <div class="table-wrap">
@@ -46,17 +57,13 @@
     </tr>
   </thead>
   <tbody>
-    {% for company in companies %}
+  {% for company in companies %}
     <tr id="company-{{ company['id'] }}">
       <td><strong>{{ company['company_name'] }}</strong></td>
       <td><code>{{ company['tax_id'] }}</code></td>
       <td class="muted">{{ company['original_address'] or '—' }}</td>
-      <td>
-        {% for email in company['all_emails'] %}<div><a href="mailto:{{ email }}">{{ email }}</a></div>{% else %}<span class="muted">—</span>{% endfor %}
-      </td>
-      <td>
-        {% for phone in company['all_phones'] %}<div><a href="tel:{{ phone }}">{{ phone }}</a></div>{% else %}<span class="muted">—</span>{% endfor %}
-      </td>
+      <td>{% for email in company['all_emails'] %}<div><a href="mailto:{{ email }}">{{ email }}</a></div>{% else %}<span class="muted">—</span>{% endfor %}</td>
+      <td>{% for phone in company['all_phones'] %}<div><a href="tel:{{ phone }}">{{ phone }}</a></div>{% else %}<span class="muted">—</span>{% endfor %}</td>
       <td>
         <span class="status {{ company['lookup_status'] }}">{{ company['lookup_status']|replace('_', ' ') }}</span>
         {% if company['remaining_requests'] is not none %}<small>{{ company['remaining_requests'] }} cereri rămase</small>{% endif %}
@@ -64,26 +71,20 @@
       </td>
       <td class="actions">
         <form method="post" action="{{ url_for('interrogate_company', company_id=company['id'], page=page, q=query) }}">
-          <button type="submit" class="button primary" {% if not api_configured %}disabled{% endif %}>
-            {{ 'Interoghează' if company['lookup_status'] == 'not_queried' else 'Reinteroghează' }}
-          </button>
+          <button type="submit" class="button primary" {% if not api_configured or not workbook_available %}disabled{% endif %}>{{ 'Interoghează' if company['lookup_status'] == 'not_queried' else 'Reinteroghează' }}</button>
         </form>
       </td>
     </tr>
-    {% endfor %}
+  {% endfor %}
   </tbody>
 </table>
 </div>
-
 <nav class="pagination" aria-label="Paginare">
   {% if page > 1 %}<a class="button" href="{{ url_for('index', page=page-1, q=query) }}">Înapoi</a>{% endif %}
   <span>Pagina {{ page }} din {{ total_pages }}</span>
   {% if page < total_pages %}<a class="button" href="{{ url_for('index', page=page+1, q=query) }}">Înainte</a>{% endif %}
 </nav>
 {% else %}
-<section class="empty-state">
-  <h2>Nu există firme încă</h2>
-  <p>Încarcă un fișier XLSX sau CSV pentru a începe.</p>
-</section>
+<section class="empty-state"><h2>Nu există firme încă</h2><p>Încarcă un fișier XLSX pentru a începe.</p></section>
 {% endif %}
 {% endblock %}
