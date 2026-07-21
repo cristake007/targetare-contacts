@@ -3,13 +3,20 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, send_file, url_for
 
 from .csv_import import CSVImportError, parse_companies_csv
 from .db import close_db, get_db, init_db
 from .targetare import TargetareClient
+from .xlsx_file import (
+    WorkbookUpdateError,
+    create_xlsx_from_rows,
+    prepare_uploaded_xlsx,
+    write_company_contacts,
+)
 from .xlsx_import import XLSXImportError, parse_companies_xlsx
 
 
@@ -37,11 +44,35 @@ def _unique_values(*values: object) -> list[str]:
     return result
 
 
+def _result_emails(payload: dict | None) -> list[str] | None:
+    if payload is None:
+        return None
+    return _unique_values(
+        payload.get("primaryEmail"),
+        payload.get("secondaryEmail"),
+        payload.get("contactEmail"),
+        *(payload.get("websiteEmails") or []),
+    )
+
+
+def _result_phones(payload: dict | None) -> list[str] | None:
+    if payload is None:
+        return None
+    return _unique_values(
+        payload.get("primaryPhone"),
+        payload.get("secondaryPhone"),
+        *(payload.get("contactPhones") or []),
+        *(payload.get("websitePhones") or []),
+        *(payload.get("verifiedPhones") or []),
+    )
+
+
 def create_app(test_config: dict | None = None) -> Flask:
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_mapping(
         SECRET_KEY=os.getenv("FLASK_SECRET_KEY", "dev-change-me"),
         DATABASE=str(Path(app.instance_path) / "targetare_contacts.sqlite3"),
+        ACTIVE_WORKBOOK=str(Path(app.instance_path) / "firme-targetare.xlsx"),
         MAX_CONTENT_LENGTH=10 * 1024 * 1024,
         TARGETARE_API_KEY=os.getenv("TARGETARE_API_KEY", ""),
         TARGETARE_API_BASE_URL=os.getenv(
@@ -50,7 +81,7 @@ def create_app(test_config: dict | None = None) -> Flask:
         TARGETARE_TIMEOUT_SECONDS=float(
             os.getenv("TARGETARE_TIMEOUT_SECONDS", "15")
         ),
-        COMPANIES_PER_PAGE=50,
+        COMPANIES_PER_PAGE=100,
     )
 
     if test_config:
@@ -120,6 +151,7 @@ def create_app(test_config: dict | None = None) -> Flask:
             total=total,
             query=query,
             api_configured=bool(app.config["TARGETARE_API_KEY"]),
+            workbook_available=Path(app.config["ACTIVE_WORKBOOK"]).is_file(),
         )
 
     @app.post("/upload")
@@ -130,17 +162,23 @@ def create_app(test_config: dict | None = None) -> Flask:
             return redirect(url_for("index"))
 
         extension = Path(uploaded.filename).suffix.lower()
-        if extension == ".xlsx":
-            parser = parse_companies_xlsx
-        elif extension == ".csv":
-            parser = parse_companies_csv
-        else:
+        if extension not in {".xlsx", ".csv"}:
             flash("Fișierul trebuie să aibă extensia .xlsx sau .csv.", "error")
             return redirect(url_for("index"))
 
+        raw = uploaded.read()
+        if not raw:
+            flash("Fișierul încărcat este gol.", "error")
+            return redirect(url_for("index"))
+
         try:
-            rows, report = parser(uploaded.stream)
-        except (CSVImportError, XLSXImportError) as exc:
+            if extension == ".xlsx":
+                rows, report = parse_companies_xlsx(BytesIO(raw))
+                prepare_uploaded_xlsx(raw, app.config["ACTIVE_WORKBOOK"])
+            else:
+                rows, report = parse_companies_csv(BytesIO(raw))
+                create_xlsx_from_rows(rows, app.config["ACTIVE_WORKBOOK"])
+        except (CSVImportError, XLSXImportError, WorkbookUpdateError) as exc:
             flash(str(exc), "error")
             return redirect(url_for("index"))
 
@@ -158,7 +196,10 @@ def create_app(test_config: dict | None = None) -> Flask:
                 ],
             )
 
-        message = f"Au fost importate {report.imported} firme."
+        message = (
+            f"Au fost importate {report.imported} firme. "
+            "Fișierul XLSX de lucru a fost pregătit pentru salvarea contactelor."
+        )
         if report.duplicates or report.invalid_tax_ids:
             message += (
                 f" Omise: {report.duplicates} duplicate și "
@@ -166,6 +207,20 @@ def create_app(test_config: dict | None = None) -> Flask:
             )
         flash(message, "success")
         return redirect(url_for("index"))
+
+    @app.get("/download")
+    def download_xlsx():
+        workbook_path = Path(app.config["ACTIVE_WORKBOOK"])
+        if not workbook_path.is_file():
+            flash("Nu există încă un fișier XLSX actualizat.", "error")
+            return redirect(url_for("index"))
+
+        return send_file(
+            workbook_path,
+            as_attachment=True,
+            download_name="firme-targetare.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
     @app.post("/companies/<int:company_id>/interrogate")
     def interrogate_company(company_id: int):
@@ -190,6 +245,8 @@ def create_app(test_config: dict | None = None) -> Flask:
             timeout=app.config["TARGETARE_TIMEOUT_SECONDS"],
         )
         result = client.interrogate(company["tax_id"])
+        email_values = _result_emails(result.emails)
+        phone_values = _result_phones(result.phones)
 
         updates: dict[str, object] = {
             "lookup_status": result.status,
@@ -222,10 +279,33 @@ def create_app(test_config: dict | None = None) -> Flask:
                 [*updates.values(), company_id],
             )
 
-        if result.status == "success":
-            flash(f"{company['company_name']} a fost interogată.", "success")
+        workbook_error: str | None = None
+        if email_values is not None or phone_values is not None:
+            try:
+                write_company_contacts(
+                    app.config["ACTIVE_WORKBOOK"],
+                    company["source_row"],
+                    email_values,
+                    phone_values,
+                )
+            except WorkbookUpdateError as exc:
+                workbook_error = str(exc)
+
+        if workbook_error:
+            flash(
+                f"Contactele au fost salvate în aplicație, dar nu și în XLSX: {workbook_error}",
+                "warning",
+            )
+        elif result.status == "success":
+            flash(
+                f"{company['company_name']} a fost interogată și salvată automat în XLSX.",
+                "success",
+            )
         elif result.status == "partial":
-            flash("Interogare parțială: unul dintre endpoint-uri a eșuat.", "warning")
+            flash(
+                "Interogare parțială. Datele disponibile au fost salvate automat în XLSX.",
+                "warning",
+            )
         else:
             flash("Interogarea a eșuat. Vezi mesajul din tabel.", "error")
 
