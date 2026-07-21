@@ -3,11 +3,11 @@
 <section class="panel upload-panel">
   <div>
     <h1>Încarcă lista de firme</h1>
-    <p>CSV cu denumirea firmei, CUI și, opțional, adresa existentă. Un import nou înlocuiește lista curentă.</p>
+    <p>XLSX sau CSV cu denumirea firmei, CUI și, opțional, adresa existentă. Un import nou înlocuiește lista curentă.</p>
   </div>
-  <form action="{{ url_for('upload_csv') }}" method="post" enctype="multipart/form-data" class="upload-form">
-    <input type="file" name="file" accept=".csv,text/csv" required>
-    <button type="submit" class="button primary">Importă CSV</button>
+  <form action="{{ url_for('upload_companies') }}" method="post" enctype="multipart/form-data" class="upload-form">
+    <input type="file" name="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
+    <button type="submit" class="button primary">Importă fișierul</button>
   </form>
 </section>
 
@@ -27,7 +27,7 @@
     <tr>
       <th>Firmă</th>
       <th>CUI</th>
-      <th>Adresă din CSV</th>
+      <th>Adresă importată</th>
       <th>Emailuri</th>
       <th>Telefoane</th>
       <th>Status</th>
@@ -70,7 +70,7 @@
 {% else %}
 <section class="empty-state">
   <h2>Nu există firme încă</h2>
-  <p>Încarcă un fișier CSV pentru a începe.</p>
+  <p>Încarcă un fișier XLSX sau CSV pentru a începe.</p>
 </section>
 {% endif %}
 {% endblock %}
