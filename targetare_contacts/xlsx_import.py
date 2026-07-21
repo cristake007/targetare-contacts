@@ -6,7 +6,15 @@ from zipfile import BadZipFile
 from openpyxl import load_workbook
 from openpyxl.utils.exceptions import InvalidFileException
 
-from .csv_import import ALIASES, CompanyRow, ImportReport, _normalize_header, normalize_tax_id
+from .csv_import import (
+    ALIASES,
+    CompanyRow,
+    ImportReport,
+    _normalize_header,
+    normalize_import_status,
+    normalize_tax_id,
+    split_contact_values,
+)
 
 
 class XLSXImportError(ValueError):
@@ -59,6 +67,9 @@ def parse_companies_xlsx(stream: BinaryIO) -> tuple[list[CompanyRow], ImportRepo
         name_index = _find_column_index(headers, "company_name", required=True)
         tax_id_index = _find_column_index(headers, "tax_id", required=True)
         address_index = _find_column_index(headers, "address", required=False)
+        email_index = _find_column_index(headers, "emails", required=False)
+        phone_index = _find_column_index(headers, "phones", required=False)
+        status_index = _find_column_index(headers, "status", required=False)
 
         rows: list[CompanyRow] = []
         seen_tax_ids: set[str] = set()
@@ -90,12 +101,19 @@ def parse_companies_xlsx(stream: BinaryIO) -> tuple[list[CompanyRow], ImportRepo
                 company_name = f"Firmă CUI {tax_id}"
 
             address = str(value_at(address_index) or "").strip()
+            emails = split_contact_values(value_at(email_index))
+            phones = split_contact_values(value_at(phone_index))
+            status = normalize_import_status(value_at(status_index), emails, phones)
+
             rows.append(
                 CompanyRow(
                     company_name=company_name,
                     tax_id=tax_id,
                     original_address=address,
                     source_row=source_row,
+                    imported_emails=emails,
+                    imported_phones=phones,
+                    imported_status=status,
                 )
             )
             seen_tax_ids.add(tax_id)
