@@ -3,7 +3,7 @@
 <section class="panel upload-panel">
   <div>
     <h1>Încarcă lista de firme</h1>
-    <p>XLSX sau CSV cu denumirea firmei, CUI și, opțional, adresa existentă. Un import nou înlocuiește lista curentă.</p>
+    <p>XLSX sau CSV cu denumirea firmei, CUI și, opțional, adresa existentă. După fiecare interogare, contactele sunt salvate automat în XLSX.</p>
   </div>
   <form action="{{ url_for('upload_companies') }}" method="post" enctype="multipart/form-data" class="upload-form">
     <input type="file" name="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required>
@@ -17,7 +17,12 @@
     <button class="button" type="submit">Caută</button>
     {% if query %}<a class="button link" href="{{ url_for('index') }}">Resetează</a>{% endif %}
   </form>
-  <span>{{ total }} firme</span>
+  <div class="toolbar-actions">
+    <span>{{ total }} firme</span>
+    {% if workbook_available %}
+      <a class="button primary" href="{{ url_for('download_xlsx') }}">Descarcă XLSX actualizat</a>
+    {% endif %}
+  </div>
 </section>
 
 {% if companies %}
