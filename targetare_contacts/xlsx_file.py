@@ -97,7 +97,19 @@ def prepare_uploaded_xlsx(raw: bytes, destination: str | Path) -> None:
     try:
         worksheet = workbook[workbook.sheetnames[0]]
         header_row, _headers = _find_header_row(worksheet)
-        _ensure_tracking_columns(worksheet, header_row)
+        email_column, phone_column, status_column = _ensure_tracking_columns(
+            worksheet, header_row
+        )
+
+        for row_number in range(header_row + 1, worksheet.max_row + 1):
+            status_cell = worksheet.cell(row=row_number, column=status_column)
+            if str(status_cell.value or "").strip():
+                continue
+            email_value = worksheet.cell(row=row_number, column=email_column).value
+            phone_value = worksheet.cell(row=row_number, column=phone_column).value
+            if str(email_value or "").strip() or str(phone_value or "").strip():
+                status_cell.value = "Interogat"
+
         _save_atomic(workbook, Path(destination))
     finally:
         workbook.close()
