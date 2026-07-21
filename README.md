@@ -13,24 +13,31 @@ Aplicație Flask pentru importul unei liste XLSX sau CSV de firme și interogare
 - tabel cu 100 de firme pe pagină și căutare după denumire/CUI;
 - buton **Interoghează** pentru fiecare firmă;
 - două cereri API per firmă: `/emails` și `/phones`;
-- salvarea rezultatelor și a erorilor în SQLite;
-- salvarea automată a contactelor în copia XLSX de lucru;
+- salvarea automată a contactelor și progresului în XLSX;
+- restaurarea automată a stării la reîncărcarea aceluiași XLSX;
 - descărcarea fișierului actualizat din interfață.
 
-Un import nou înlocuiește lista și fișierul XLSX de lucru curente.
+## XLSX-ul este sursa de adevăr
 
-## Salvarea rezultatelor în XLSX
-
-La încărcare, aplicația creează în directorul local `instance` o copie de lucru numită `firme-targetare.xlsx`. Fișierul original de pe calculator nu este modificat direct de browser.
-
-Aplicația adaugă sau reutilizează două coloane:
+Aplicația folosește trei coloane pentru a păstra rezultatele și progresul:
 
 - `Emailuri Targetare`;
-- `Telefoane Targetare`.
+- `Telefoane Targetare`;
+- `Status interogare`.
 
-După fiecare interogare reușită sau parțială, datele disponibile sunt scrise automat pe rândul firmei. Valorile multiple sunt separate prin `;` și duplicatele sunt eliminate.
+După fiecare interogare, datele sunt scrise pe rândul firmei, iar statusul devine `Interogat`, `Parțial` sau `Eroare`.
 
-Butonul **Descarcă XLSX actualizat** returnează întotdeauna ultima copie salvată.
+La următoarea sesiune:
+
+1. încarcă XLSX-ul actualizat descărcat anterior;
+2. aplicația citește cele trei coloane;
+3. contactele reapar în tabel;
+4. firmele deja procesate sunt marcate și au butonul **Reinteroghează**;
+5. poți continua de unde ai rămas.
+
+Dacă un XLSX mai vechi are deja emailuri sau telefoane, dar nu are coloana `Status interogare`, aplicația adaugă această coloană și marchează automat acele rânduri ca `Interogat`.
+
+Browserul nu poate modifica direct fișierul original aflat pe calculator. Butonul **Descarcă XLSX actualizat** returnează copia care trebuie păstrată și reîncărcată data viitoare.
 
 ## Pornire locală
 
@@ -58,20 +65,20 @@ Deschide `http://127.0.0.1:5000`.
 
 Prima foaie trebuie să conțină un rând de antet cu denumirea firmei și CUI-ul. Adresa este opțională.
 
-| Denumire | Cod unic inregistrare | Adresa |
-|---|---|---|
-| EXEMPLU SRL | RO12345678 | București |
+| Denumire | Cod unic inregistrare | Adresa | Emailuri Targetare | Telefoane Targetare | Status interogare |
+|---|---|---|---|---|---|
+| EXEMPLU SRL | RO12345678 | București | office@exemplu.ro | +40700000000 | Interogat |
 
 Aplicația caută rândul de antet în primele 25 de rânduri, astfel încât fișierul poate conține câteva rânduri introductive înaintea tabelului.
 
 ## Format CSV alternativ
 
 ```csv
-Denumire;Cod unic inregistrare;Adresa
-EXEMPLU SRL;RO12345678;București
+Denumire;Cod unic inregistrare;Adresa;Emailuri Targetare;Telefoane Targetare;Status interogare
+EXEMPLU SRL;RO12345678;București;office@exemplu.ro;+40700000000;Interogat
 ```
 
-Pentru un import CSV, aplicația generează automat o copie XLSX de lucru. Adresa importată este afișată doar ca referință. Interogarea se face exclusiv după CUI.
+Pentru un import CSV, aplicația generează automat o copie XLSX de lucru. Interogarea se face exclusiv după CUI.
 
 ## Teste
 
