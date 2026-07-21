@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
@@ -40,11 +41,8 @@ def _status_text(status: str) -> str:
 
 
 def _ensure_tracking_columns(worksheet, header_row: int) -> tuple[int, int, int]:
-    email_column: int | None = None
-    phone_column: int | None = None
-    status_column: int | None = None
+    email_column = phone_column = status_column = None
     last_header_column = 0
-
     for cell in worksheet[header_row]:
         value = str(cell.value or "").strip()
         if value:
@@ -69,7 +67,6 @@ def _ensure_tracking_columns(worksheet, header_row: int) -> tuple[int, int, int]
     if status_column is None:
         status_column = next_column
         worksheet.cell(row=header_row, column=status_column, value=STATUS_HEADER)
-
     return email_column, phone_column, status_column
 
 
@@ -86,30 +83,74 @@ def _save_atomic(workbook, destination: Path) -> None:
             temporary.unlink(missing_ok=True)
 
 
-def prepare_uploaded_xlsx(raw: bytes, destination: str | Path) -> None:
+def backup_active_workbook(source: str | Path, backup: str | Path) -> bool:
+    source_path = Path(source)
+    if not source_path.is_file():
+        return False
+    backup_path = Path(backup)
+    backup_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = backup_path.with_name(f".{backup_path.name}.tmp")
+    try:
+        shutil.copy2(source_path, temporary)
+        os.replace(temporary, backup_path)
+    except OSError as exc:
+        raise WorkbookUpdateError(f"Nu am putut crea copia de siguranță XLSX: {exc}") from exc
+    finally:
+        if temporary.exists():
+            temporary.unlink(missing_ok=True)
+    return True
+
+
+def _write_rows(worksheet, rows: list[CompanyRow], header_row: int) -> None:
+    email_column, phone_column, status_column = _ensure_tracking_columns(
+        worksheet, header_row
+    )
+    for row in rows:
+        worksheet.cell(
+            row=row.source_row,
+            column=email_column,
+            value=_unique_text(row.imported_emails),
+        )
+        worksheet.cell(
+            row=row.source_row,
+            column=phone_column,
+            value=_unique_text(row.imported_phones),
+        )
+        worksheet.cell(
+            row=row.source_row,
+            column=status_column,
+            value=_status_text(row.imported_status),
+        )
+
+
+def prepare_uploaded_xlsx(
+    raw: bytes,
+    destination: str | Path,
+    rows: list[CompanyRow] | None = None,
+) -> None:
     try:
         workbook = load_workbook(BytesIO(raw))
     except Exception as exc:
         raise WorkbookUpdateError(
             "Fișierul XLSX nu a putut fi pregătit pentru salvare."
         ) from exc
-
     try:
         worksheet = workbook[workbook.sheetnames[0]]
         header_row, _headers = _find_header_row(worksheet)
-        email_column, phone_column, status_column = _ensure_tracking_columns(
-            worksheet, header_row
-        )
-
-        for row_number in range(header_row + 1, worksheet.max_row + 1):
-            status_cell = worksheet.cell(row=row_number, column=status_column)
-            if str(status_cell.value or "").strip():
-                continue
-            email_value = worksheet.cell(row=row_number, column=email_column).value
-            phone_value = worksheet.cell(row=row_number, column=phone_column).value
-            if str(email_value or "").strip() or str(phone_value or "").strip():
-                status_cell.value = "Interogat"
-
+        if rows is not None:
+            _write_rows(worksheet, rows, header_row)
+        else:
+            email_column, phone_column, status_column = _ensure_tracking_columns(
+                worksheet, header_row
+            )
+            for row_number in range(header_row + 1, worksheet.max_row + 1):
+                status_cell = worksheet.cell(row=row_number, column=status_column)
+                if str(status_cell.value or "").strip():
+                    continue
+                email_value = worksheet.cell(row=row_number, column=email_column).value
+                phone_value = worksheet.cell(row=row_number, column=phone_column).value
+                if str(email_value or "").strip() or str(phone_value or "").strip():
+                    status_cell.value = "Interogat"
         _save_atomic(workbook, Path(destination))
     finally:
         workbook.close()
@@ -121,26 +162,11 @@ def create_xlsx_from_rows(rows: list[CompanyRow], destination: str | Path) -> No
         worksheet = workbook.active
         worksheet.title = "Companii"
         worksheet.append(["Denumire", "Cod unic inregistrare", "Adresa"])
-        email_column, phone_column, status_column = _ensure_tracking_columns(worksheet, 1)
         for row in rows:
             worksheet.cell(row=row.source_row, column=1, value=row.company_name)
             worksheet.cell(row=row.source_row, column=2, value=row.tax_id)
             worksheet.cell(row=row.source_row, column=3, value=row.original_address)
-            worksheet.cell(
-                row=row.source_row,
-                column=email_column,
-                value=_unique_text(row.imported_emails),
-            )
-            worksheet.cell(
-                row=row.source_row,
-                column=phone_column,
-                value=_unique_text(row.imported_phones),
-            )
-            worksheet.cell(
-                row=row.source_row,
-                column=status_column,
-                value=_status_text(row.imported_status),
-            )
+        _write_rows(worksheet, rows, 1)
         _save_atomic(workbook, Path(destination))
     finally:
         workbook.close()
@@ -151,24 +177,21 @@ def write_company_contacts(
     source_row: int,
     emails: list[str] | None,
     phones: list[str] | None,
-    status: str,
+    status: str = "success",
 ) -> None:
     path = Path(workbook_path)
     if not path.is_file():
         raise WorkbookUpdateError("Fișierul XLSX activ nu mai există.")
-
     try:
         workbook = load_workbook(BytesIO(path.read_bytes()))
     except Exception as exc:
         raise WorkbookUpdateError("Fișierul XLSX activ nu poate fi deschis.") from exc
-
     try:
         worksheet = workbook[workbook.sheetnames[0]]
         header_row, _headers = _find_header_row(worksheet)
         email_column, phone_column, status_column = _ensure_tracking_columns(
             worksheet, header_row
         )
-
         if emails is not None:
             worksheet.cell(
                 row=source_row,
@@ -186,7 +209,6 @@ def write_company_contacts(
             column=status_column,
             value=_status_text(status),
         )
-
         _save_atomic(workbook, path)
     finally:
         workbook.close()
