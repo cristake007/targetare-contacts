@@ -17,6 +17,9 @@ class CompanyRow:
     tax_id: str
     original_address: str
     source_row: int
+    imported_emails: tuple[str, ...] = ()
+    imported_phones: tuple[str, ...] = ()
+    imported_status: str = "not_queried"
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,32 @@ ALIASES = {
         "adresa sediului social",
         "sediu social",
     },
+    "emails": {
+        "email",
+        "emails",
+        "emailuri",
+        "email targetare",
+        "emailuri targetare",
+        "adresa email",
+        "adrese email",
+    },
+    "phones": {
+        "telefon",
+        "telefoane",
+        "phone",
+        "phones",
+        "telefon targetare",
+        "telefoane targetare",
+        "numar telefon",
+        "numere telefon",
+    },
+    "status": {
+        "status",
+        "status interogare",
+        "stare interogare",
+        "interogat",
+        "interogata",
+    },
 }
 
 
@@ -71,6 +100,48 @@ def normalize_tax_id(value: object) -> str:
     raw = str(value or "").strip().upper()
     raw = re.sub(r"^RO\s*", "", raw)
     return re.sub(r"\D", "", raw)
+
+
+def split_contact_values(value: object) -> tuple[str, ...]:
+    raw = str(value or "").strip()
+    if not raw:
+        return ()
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in re.split(r"[;|,\n\r]+", raw):
+        item = item.strip()
+        key = item.casefold()
+        if item and key not in seen:
+            result.append(item)
+            seen.add(key)
+    return tuple(result)
+
+
+def normalize_import_status(
+    value: object,
+    emails: tuple[str, ...] = (),
+    phones: tuple[str, ...] = (),
+) -> str:
+    normalized = _normalize_header(str(value or ""))
+    if normalized in {
+        "success",
+        "interogat",
+        "interogata",
+        "da",
+        "done",
+        "finalizat",
+        "finalizata",
+        "complet",
+    }:
+        return "success"
+    if normalized in {"partial", "partial", "partial interogat", "incomplet"}:
+        return "partial"
+    if normalized in {"error", "eroare", "failed", "esuat", "esuata"}:
+        return "error"
+    if emails or phones:
+        return "success"
+    return "not_queried"
 
 
 def _find_column(headers: list[str], alias_group: str, required: bool) -> str | None:
@@ -113,6 +184,9 @@ def parse_companies_csv(stream: BinaryIO) -> tuple[list[CompanyRow], ImportRepor
     name_column = _find_column(headers, "company_name", required=True)
     tax_id_column = _find_column(headers, "tax_id", required=True)
     address_column = _find_column(headers, "address", required=False)
+    email_column = _find_column(headers, "emails", required=False)
+    phone_column = _find_column(headers, "phones", required=False)
+    status_column = _find_column(headers, "status", required=False)
 
     rows: list[CompanyRow] = []
     seen_tax_ids: set[str] = set()
@@ -133,12 +207,20 @@ def parse_companies_csv(stream: BinaryIO) -> tuple[list[CompanyRow], ImportRepor
             company_name = f"Firmă CUI {tax_id}"
 
         address = str(record.get(address_column) or "").strip() if address_column else ""
+        emails = split_contact_values(record.get(email_column)) if email_column else ()
+        phones = split_contact_values(record.get(phone_column)) if phone_column else ()
+        status_value = record.get(status_column) if status_column else None
+        status = normalize_import_status(status_value, emails, phones)
+
         rows.append(
             CompanyRow(
                 company_name=company_name,
                 tax_id=tax_id,
                 original_address=address,
                 source_row=source_row,
+                imported_emails=emails,
+                imported_phones=phones,
+                imported_status=status,
             )
         )
         seen_tax_ids.add(tax_id)
